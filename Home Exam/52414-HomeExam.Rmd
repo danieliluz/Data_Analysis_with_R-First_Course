@@ -1,0 +1,787 @@
+---
+title: "Final_Assignment"
+date: "July 2020"
+output:
+  html_document:
+    theme: lumen
+    toc: yes
+    toc_float:
+      collapsed: yes
+  word_document:
+    toc: yes
+---
+<style type="text/css">
+  body{
+  font-size: 11pt;
+}
+</style>
+
+**Contents**:  
+
+* [Q1. Monte Carlo Example  (25 pt)](# )    
+
+* [Q2. Analysis and Visualization of the COVID-19 Data (45 pt)](# )    
+
+* [Q3. Linear Congruential Generator (35 pt)](# )      
+
+```{r setup}
+knitr::opts_chunk$set(echo = TRUE,
+                      error=FALSE,
+                      warning=FALSE,
+                      message=FALSE)
+```
+
+```{r Libraries}
+library(ggplot2)
+library(tidyverse)
+library(rvest)
+library(dplyr)
+library(reshape)
+library(data.table)
+library(caTools)
+library(plotly)
+library(moments)
+
+options(scipen=999)
+```
+
+## Q1. Compute Areas Using Monte Carlo Sampling (25 pt)    
+
+**Monte Carlo method is a useful tool for transforming problems of probabilistic nature into deterministic computations using the law of large numbers.**
+
+Assume that the radius $r$ of the four overlapping white circles in the figure below is the last digit of your ID number ('sifrat-bikoret'). If this digit is $0$ set $r=10$. The radius of the large circle is $2r$.
+
+![](https://raw.githubusercontent.com/DataScienceHU/52414DataAndFigs/master/figs/overlappingCircles.png)
+### a. (5pt) Describe in a few sentences a Monte-Carlo-based algorithm for calculating the `orange area`. Aside from verbal explanations, you may use pseudo-code and/or mathematical symbols to explain your algorithm. 
+
+**a.** To calculate the orange area I used the explicit circle formula: (x-a)^2 + (y-b)^2 =r^2 ,
+Because each small circle expresses a change in **a** or **b**.
+
+So, when we needed to check if the point is inside the large circle we used the formula for the unit circle - x^2 + y^2 = 2*r^2 - because it's given that the radius og the large circle is 2r.
+
+Now, this formula is not enough and additional conditions concerning each small circle must be added separately.
+
+In fact, the orange area is all the points that are inside the Unit circle (large circle) but not inside any of the small circles.
+
+The test is done by a nested loop of conditions:
+
+1. if (cur_x^2 + cur_y^2 <= 4*r^2)
+
+2. if not (cur_x^2 + (cur_y-r)^2 <= r^2)
+
+3. if not (cur_x-r)^2 + (cur_y)^2 <= r^2)
+
+4. if not (cur_x)^2 + (cur_y+r)^2 <= r^2) 
+
+5. if not((cur_x+r)^2 + (cur_y)^2 <= r^2)
+
+and if the answer for all these conditions is TRUE so the point is in the Orange area.
+
+after we got a matrix with all the points that are inside the Orange area, we will multiply the proportion of those points out of the total points we sampled in the large circle area. 
+
+the formula is : (number of points in the orange area/50000)*4*r *pi^2
+
+### b. (9pt) Perform a Monte Carlo simulation based on your description from (a.), and estimate the orange area using $n=50,000$ random samples. 
+
+```{r 1b}
+reject_rcircle = function(n, r)
+{
+  x <- y <- c()
+  notx <- noty <- c()
+  ctr <- 1
+  bool <- FALSE
+  while (ctr <= n)
+  {
+    bool <- FALSE
+    cur_x <- runif(1, -2*r, 2*r)
+    cur_y <- runif(1, -2*r, 2*r)
+    
+    if(cur_x^2 + cur_y^2 <= 4*(r^2)){
+      if (! (cur_x^2 + (cur_y-r)^2 <= r^2)){
+        if (! ((cur_x-r)^2 + (cur_y)^2 <= r^2)) {
+          if (! ((cur_x)^2 + (cur_y+r)^2 <= r^2)) {
+            if (! ((cur_x+r)^2 + (cur_y)^2 <= r^2)) {
+              x <- c(x,cur_x)
+              y <- c(y,cur_y)
+              ctr<- ctr + 1
+              bool <- TRUE
+            }
+          }
+        }
+      }
+      if(bool == FALSE){
+        notx <- c(notx,cur_x)
+        noty <- c(noty,cur_y)
+        ctr <- ctr + 1
+      }
+    }
+  }
+  ans<- list(rbind(x,y),rbind(notx,noty))
+  return(ans)
+}
+```
+
+### c. (5pt) Plot the simulated points you have generated, with the points that fall inside the orange area in one color and the rest of the points in another color.  
+
+```{r 1c}
+xy <- reject_rcircle(50000, 7)
+in_orange <- xy[[1]] # matrix of the orange points
+not_orange <- xy[[2]] # matrix of the other points
+
+# Orange area:
+num_orange_area <-(ncol(in_orange)/50000)*(4*pi*7^2)
+print(round(num_orange_area,3))
+
+# c. plot of all the simulated points I have generated
+
+{plot(in_orange[1,],in_orange[2,],pch = 20,cex=0.5,col = "dark orange",xlab = "x", ylab = "y",xlim = c(-14,14),ylim = c(-14,14))
+par(new = TRUE)
+plot(not_orange[1,],not_orange[2,],pch = 20,cex=0.5,col = "light blue",xlab = "x", ylab = "y",xlim = c(-14,14),ylim = c(-14,14))}
+```
+
+
+### d. (6pt) Compute an estimate for the standard deviation of your estimator from (b.), and use the Normal approximation to compute a $95\%$ confidence interval for the area based on this standard deviation. 
+
+As we know, If we perform this sampling indefinitely we will get a random variable that divides binomial(n,p).
+
+In this case, n=50,000 , p= ncol(in_orange)/50000.
+
+so the SD is :(p*(1-p)/n)^1/2
+
+```{r 1d_1}
+# p_hat for binomial sample
+orange_phat <- ncol(in_orange)/50000 
+
+# estimated standard deviation
+est_SD <- sqrt(orange_phat*(1-orange_phat)/50000)
+print(paste0('SD : ',round(est_SD,3)))
+
+# confidence interval:
+upper_bond <- round(num_orange_area + qnorm(1-0.05/2)*est_SD,3)
+lower_bond <- round(num_orange_area - qnorm(1-0.05/2)*est_SD,3)
+CI <- c(lower_bond,upper_bond)
+print(CI)
+```
+
+In addition I ran the sample 100 times and it can be seen that I reached a standard deviation almost identical to what I received in the above formula.
+
+Therefore, I preferred to use this formula above rather than run tens of thousands more times as required by this method until I reached a more accurate standard deviation.
+
+```{r 1d_2}
+vec_ratio<- c()
+for (i in 1:100){
+  l <- reject_rcircle(50000, 7)
+  in_orange_l <- l[[1]]
+  vec_ratio<-c(vec_ratio, ncol(in_orange_l)/50000)
+}
+sd_vec_ratio<- sd(vec_ratio)
+
+upper_bond1 <- round(num_orange_area + qnorm(1-0.05/2)*sd_vec_ratio,3)
+lower_bond1 <- round(num_orange_area - qnorm(1-0.05/2)*sd_vec_ratio,3)
+
+CI_2 <- c(lower_bond1,upper_bond1)
+print(CI_2)
+
+
+```
+
+## Q2. Analysis and Visualization of the COVID-19 Data (45 pt)    
+
+We would like to compare and visualize the trends in terms of numbers of COVID-19 cases and deaths between different countries. 
+
+### a. (6pt) Read the COVID-19 dataset file `WHO-COVID-19-global-data.csv` from the [World's Health Organization](https://covid19.who.int/?gclid=Cj0KCQjwudb3BRC9ARIsAEa-vUuF5yzpzQUOyxXJvgsXDE6koerrpqO7go0BPBTylJbYh_fPSaYaMWUaAhNlEALw_wcB) webpage (see the link `Download Map Data` on the bottom right corner of the map). <br>
+
+The data represents the daily number of cases and deaths from COVID19 in different world countries. <br>
+
+Change the column representing the date to `Date`. Make sure that this column represents only the date and set it to 'date' type. For example, the first element in the 'Date' column should be "2020-02-24". <br>
+
+Show the head and tail of the resulting data-frame.
+
+```{r 2a}
+
+covid_data <-read.csv("WHO-COVID-19-global-data.csv")
+covid_data = covid_data %>% rename(Date = ן..Date_reported) %>% 
+  mutate (Date = as.Date(Date,"%d/%m/%Y") )
+
+class(covid_data$Date) # check if this column's class is a Date
+```
+
+As we can see, the class of all the values in the Date column is 'Date'.
+
+```{r, echo=TRUE,warning=FALSE, message = FALSE}
+head(covid_data)
+tail(covid_data)
+```
+
+### b. (7pt) In this sub-question and the next one, we're interested in plotting the COVID-19 trends in `Israel` and its neighbours. 
+
+Extract as candidate neighbors all countries with `WHO_region = EMRO`. Add `Israel` and other neighbor countries that you notice are missing, and remove far away countries (e.g. `Afghanistan`, `Djibouti`). Use your best judgment in selecting which additional countries to remove, and keep the total number of neighbor countries at below $15$. <br>
+
+Replace long country names by meaningful short names for better readability and graph appearance. 
+
+For example, if `Venezuela (Bolivarian Republic of)` was one of our neighbours, we would have replaced it by `Venezuela`. <br>
+
+Next, plot the `cumulative` number of `cases` as a function of the `Date` for these countries (one plot, a different curve per each country). 
+
+Repeat and show in a different plot the `cumulative` number of `deaths` for each of these countries. 
+
+
+```{r 2b}
+# prepare the data
+covid_data$Country <- as.character(covid_data$Country)
+covid_data$Country[covid_data$Country == "Syrian Arab Republic"] <- "Syria"
+covid_data$Country[covid_data$Country == "occupied Palestinian territory, including east Jerusalem"] <- "West Bank and Gaza"
+covid_data$Country[covid_data$Country == "Iran (Islamic Republic of)"] <- "Iran"
+covid_data$Country[covid_data$Country == "United States of America"] <- "United States"
+# covid_data$Country[covid_data$Country == "The United Kingdom"] <- "United Kingdom"
+
+EMRO <- covid_data[which(covid_data$WHO_region == "EMRO"),]
+
+#find israel's neighbours
+EMRO_neighbours <- EMRO %>%
+                      filter_at(vars(Country), all_vars(. %in% c("Syria","Jordan","Lebanon","Egypt", "Iraq", "Iran", "Saudi Arabia", "Libya", "West Bank and Gaza")))
+
+Other_neighbours <- covid_data %>%
+                       filter_at(vars(Country), all_vars(. %in% c("Turkey","Greece","Cyprus","Sudan","Israel")))
+
+#merge all the neighbours that I found
+neighbours <- rbind(EMRO_neighbours,Other_neighbours)
+
+#prepare specific data frames for the plot
+cum_cases_nei <- aggregate(Cumulative_cases ~ Country + Date , data = neighbours, FUN = sum)
+cum_deaths_nei <- aggregate(Cumulative_deaths ~ Country + Date , data = neighbours, FUN = sum)
+
+
+# plot of cumulative cases
+tmp <- cum_cases_nei %>%
+  mutate(variable2=Country)
+tmp %>%
+  ggplot( aes(x=Date, y=Cumulative_cases)) +
+  geom_line( data=tmp %>% dplyr::select(-Country), aes(group=variable2), color="grey", size=0.5, alpha=0.5) +
+  geom_line( aes(color=Country), color="blue", size=1.2 )+
+  scale_colour_viridis_d(option = "plasma")+
+  theme_minimal() +
+  theme(
+    legend.position="none",
+    plot.title = element_text(size=14),
+    panel.grid = element_blank()
+  ) +
+  ggtitle("Cumulative cases by Country - Israel neighbours") +
+  facet_wrap(~Country)
+
+
+# plot of cumulative deaths
+tmp <- cum_deaths_nei %>%
+  mutate(variable2=Country)
+tmp %>%
+  ggplot( aes(x=Date, y=Cumulative_deaths)) +
+  geom_line( data=tmp %>% dplyr::select(-Country), aes(group=variable2), color="grey", size=0.5, alpha=0.5) +
+  geom_line( aes(color=Country), color="red", size=1.2 )+
+  scale_colour_viridis_d(option = "plasma")+
+  theme_minimal() +
+  theme(
+    legend.position="none",
+    plot.title = element_text(size=14),
+    panel.grid = element_blank()
+  ) +
+  ggtitle("Cumulative deaths by Country - Israel neighbours") +
+  facet_wrap(~Country)
+
+```
+
+I have chosen to describe in one graph but one that describes each country separately the progress of each country, because there are many countries that are neighbors of Israel, where the increase is not extreme and therefore their curve can not be seen optimally.
+
+
+
+### c. (10pt) Load the economic dataset for world countries which we used in `lab1` from [here](https://raw.githubusercontent.com/DataScienceHU/DataAnalysisR_2020/master/data/economic_data.csv).
+
+Merge the two data-frames such that the new data-frame will keep the information in the COVID-19 data-frame, yet will also contain for each row the total population of each country in $2018$. 
+
+Manually rename country names that do not match between the two datasets - you don't have to change all names, but focus on including countries that come up in the analysis of (b.) and of the next sub-questions. <br>
+
+Create four new columns, respectively representing the number of *cumulative* `cases` and `deaths` per one million people, and the number of *new* daily `cases` and `deaths` per one million people. <br>
+
+For the same countries used in (b.), plot in two separate figures
+
+the *log-scaled* `cumulative` number of `cases` and `deaths` per million, as a function of the Date. <br>
+
+Which countries seem to be doing the worst based on these plots? how is Israel coping compared to its neighbours?
+
+```{r 2c}
+# load the economic data and connect the rellevant population to each country
+eco_data <- read.csv(url("https://raw.githubusercontent.com/DataScienceHU/DataAnalysisR_2020/master/data/economic_data.csv"), comment.char="#")
+
+#prepare the data and the names
+names(eco_data)[names(eco_data)== "ן..Country.Name"] <- "Country"
+eco_data$Country <- as.character(eco_data$Country)
+eco_data$Country[eco_data$Country=="Iran, Islamic Rep."] <- "Iran"
+eco_data$Country[eco_data$Country == "Egypt, Arab Rep."] <- "Egypt"
+eco_data$Country[eco_data$Country == "Syrian Arab Republic"] <- "Syria"
+eco_data$Country[eco_data$Country == "United Kingdom"] <- "The United Kingdom"
+eco_data <- eco_data[which(eco_data$Series.Name == "Population, total"),]
+names(eco_data)[names(eco_data)== "X2018..YR2018."] <- "pop_total_2018"
+
+eco_data$pop_total_2018 <- as.numeric(as.character(eco_data$pop_total_2018))
+
+join_covid_eco <- left_join(covid_data,eco_data) #merge the population to the covid_data
+
+# add new columns of the cases/deaths per 1 million
+join_covid_eco$cum_deaths_per_mill <- c(suppressWarnings((as.numeric(join_covid_eco$Cumulative_deaths)/as.numeric(join_covid_eco$pop_total_2018))) * 1000000)
+join_covid_eco$cum_cases_per_mill <- c(suppressWarnings((as.numeric(join_covid_eco$Cumulative_cases)/as.numeric(join_covid_eco$pop_total_2018))) * 1000000)
+
+join_covid_eco$new_deaths_per_mill <- c(suppressWarnings((as.numeric(join_covid_eco$New_deaths)/as.numeric(join_covid_eco$pop_total_2018))) * 1000000)
+join_covid_eco$new_cases_per_mill <- c(suppressWarnings((as.numeric(join_covid_eco$New_cases)/as.numeric(join_covid_eco$pop_total_2018))) * 1000000)
+length(unique(join_covid_eco$Country))
+
+### adding the new columns to the neighbours data
+join_nei_eco <- left_join(neighbours,join_covid_eco)
+
+
+# log scale plot of cumulative cases per million for Israel's neighbours
+
+tmp <- join_nei_eco %>%
+  mutate(variable2=Country)
+tmp %>%
+  ggplot( aes(x=Date, y=log(cum_cases_per_mill +1 ))) +
+  geom_line( data=tmp %>% dplyr::select(-Country), aes(group=variable2), color="grey", size=0.5, alpha=0.5) +
+  geom_line( aes(color=Country), color="blue", size=1.2 )+
+  scale_colour_viridis_d(option = "plasma")+
+  theme_minimal() +
+  theme(
+    legend.position="none",
+    plot.title = element_text(size=14),
+    panel.grid = element_blank()
+  ) +
+  ggtitle("log scale of Cumulative cases per 1 Million by Country - Israel neighbours") +
+  facet_wrap(~Country)
+
+
+# log scale plot of cumulative deaths per million for Isarel's neighbours
+tmp <- join_nei_eco %>%
+  mutate(variable2=Country)
+tmp %>%
+  ggplot( aes(x=Date, y=log(cum_deaths_per_mill +1 ))) +
+  geom_line( data=tmp %>% dplyr::select(-Country), aes(group=variable2), color="grey", size=0.5, alpha=0.5) +
+  geom_line( aes(color=Country), color="red", size=1.2 )+
+  scale_colour_viridis_d(option = "plasma")+
+  theme_minimal() +
+  theme(
+    legend.position="none",
+    plot.title = element_text(size=14),
+    panel.grid = element_blank()
+  ) +
+  ggtitle("log scale of Cumulative Deaths per 1 Million by Country - Israel neighbours") +
+  facet_wrap(~Country)
+
+```
+
+I added +1 to the column of the cumulative cases and deaths as we required in the instructions because they have zero values.
+
+According to the cases graph, it can be seen that all countries are on the rise in morbidity, with Saudi Arabia leading in terms of the rate of increase, and it can also be seen that Israel moderated the rate of increase for some time, but in June the rate of increase began to rise again.
+
+Still, in relation to the other countries it can be said that Israel has a lower morbidity rate even though the rate has risen again in the last month.
+
+According to the graph of deaths, it can be seen that the mortality rate in Israel has stabilized. And from neighboring countries, it can be seen that Egypt, Saudi Arabia and Iran are failing to stop the rise in mortality.
+
+### d. (7pt) One measure of the healthcare system strength in a country is the ratio of the number of deaths to the number of cases (with the caveats that this number is affected by other things like
+
+the population age-structure, the fact that testing and diagnosing cases are different between countries, and that the pandemic is still ongoing and more deaths are expected in the future for current cases). <br> 
+
+Calculate for each country the `total cases per million` and `total deaths per million`  (It is recommended to create a new data-frame with one row per country), and make a scatter-plot comparing the two shown on a `log-scale`.  
+
+Fit a linear regression line to the log-scaled data. <br>
+
+Define the `fatality rate` as the ratio of the `total deaths` to the `total cases`. Display the distribution of `fatality rate` across countries using a plotting method of your choice. Describe the distribution:  what is the mean/median? is it symmetric? skewed? are there outlier countries? which ones?
+
+```{r 2d_1}
+#create a new data frame with all the total numbers by last date
+total_data <- join_covid_eco[which(join_covid_eco$Date==max(join_covid_eco$Date)),]
+total_data <- na.omit(total_data)
+
+# a log scale plot of the total cases vs total deaths
+p <- qplot(log(total_data$cum_cases_per_mill+1), log(total_data$cum_deaths_per_mill)) + 
+  coord_equal()
+p + theme( aspect.ratio=1 ) +geom_smooth(method = "lm",se=FALSE,color="red") + labs(title = "log scale of Cases Vs. Deaths per Million", y = "Deaths per Million", x = "Cases per Million")
+```
+
+Here again I added +1 to the column of the cumulative cases as we required in the instructions because they have zero values.
+
+```{r 2d_2}
+# adding a new column of the fatality rate
+total_data$Fatality_Rate <- c(total_data$Cumulative_deaths/total_data$Cumulative_cases)
+
+ggplot(total_data, aes(x=Fatality_Rate)) +
+    geom_density(fill="#69b3a2", color="#e9ecef", alpha=0.8) +xlim(-0.05,0.2)+
+    ggtitle("Fatality Rate Distribution") +
+    theme_minimal()
+
+#mean fatality:
+round(mean(total_data$Fatality_Rate),4)
+#median fatality
+round(median(total_data$Fatality_Rate),3)
+#skewness:
+round(skewness(total_data$Fatality_Rate),3)
+#outliers
+out_countries <- total_data[which(total_data$Fatality_Rate > 0.14),c(3,18)]
+out_countries
+```
+
+I chose the density graph because as we have learned it is the best graph to show a density of a ratio. In our case, when we talking about mortality it is important to look at the number of deaths from the corona cases and in this way the countries can be compared.
+
+The average is 0.0311, the median is: 0.021.
+
+I used the library "moments" for calculating the skeness ans the result i got is : skewness = 2.143, bigger than 0 so it's indicating a long right tail which mean it is not symetric density (as we  can see in the plot).
+
+The outliers according to rate of 0.14 are: Belgium,	France, Italy and The United Kingdom.
+
+### e. (7pt) Find the countries worst hit by COVID-19, i.e. those with $>10000$ `total deaths`.
+
+For these countries, plot the `smoothed` number of `new` daily cases. 
+
+You can use the `geom_smooth` function. <br>
+
+Identify at least three different qualitative behaviors of the curves of the different countries. Which countries seemed to have overcome the pandemic? 
+
+in which countries it is still rising? are their countries with a second wave? 
+
+Do you see different patterns between different countries? 
+
+```{r 2e}
+#e.
+# a data frame of the worst countris according to number of deaths
+Worst_countries <- total_data[which(total_data$Cumulative_deaths > 10000),]
+
+#prepare temporary data frame for the ggplot
+tmp_data <- join_covid_eco[which(join_covid_eco$Country == Worst_countries$Country),]
+ggplot(tmp_data , aes(x = Date, y = New_cases, colour = Country)) + geom_smooth() + theme_bw() + ylab("New Cases") + ggtitle("New Cases by Country")
+
+
+```
+
+It can be seen from the graph that the United States, Brazil and India are still dealing with the epidemic, and the morbidity there does not stop and only increases at a high rate. In addition, Mexico does not yet reach a high daily number of cases but it can be seen that this number rising.
+
+On the other hand, it can be seen that Russia towards June had a high increase in morbidity and now there is a significant decrease in the number of new cases.
+
+In addition in the UK it can be seen that while there was not a large increase, they were able to take control of the plague and quickly 
+managed to bring down the number of new cases.
+
+
+### f.  (8pt) Our goal is to separate automatically the countries into *groups*: countries that have passed the pandemic first wave peak and are currently almost disease-free, 
+
+countries that are at the peak of the disease, and countries that have passed the peak but still see many cases, or are facing a 'second wave'. <br>
+
+Create a new column for the merged data-frame containing a smoothed version of the daily number of new cases per million, where smoothing is performed using 
+
+*moving-average* with a *moving-average*  "window" of width two-weeks (14 days). You can use for example the `runmean` command from the `caTools` package. <br>
+
+For each country compute the `maximum` number of smoothed new daily cases, representing the average number of new daily cases at the peak of the epidemic. 
+
+Similarly, compute for each country the `last` number of smoothed new daily cases, representing the current average number of daily cases. Make sure that the last number is indeed an average of the last $14$ days and not fewer days (e.g. a single day). <br>
+
+- We define a country as `recovered`  if we have $\frac{last}{maximum} < 0.01$, i.e. the current number of daily cases is less than $1\%$ than the number at the peak of the epidemic. <br>
+
+- Similarly, we define a country as `exponentially increasing` if we have $\frac{last}{maximum} > 0.99$, 
+
+i.e. it seems that the country still hasn't reached its peak. <br>
+
+- Finally, we define a country as `struggling` if we have $0.25 < \frac{last}{maximum} < 0.75$, 
+
+i.e. it seems that the country has passed its peak, but the epidemic is still active. <br>
+
+Determine the countries belonging to each of the three groups:  `recovered`, `exponentially increasing` and `struggling`
+
+(many countries do not belong to any of these three groups). <br>
+
+Next, for each of the three groups, make a figure showing all countries in this group in separate plots. 
+
+For each country, plot the smoothed number of new daily cases, *divided by its max*, as a function of the Date. Do the curves representing the different countries look similar within a group? do they look similar for countries from different groups? 
+
+For which group can you spot an indication for the start of a `second wave` of the pandemic? for which countries? 
+
+```{r 2f}
+#functions for calculating the max numberand the last number of smoothed new daily cases:
+
+last_num <- function(col){
+  last_runmean1 <- runmean(col,14)
+  last_runmean <- last_runmean1[length(last_runmean1)]
+  return(last_runmean)
+}
+
+max_num <- function(col){
+  max_runmean1 <- runmean(col,14)
+  max_runmean <- max(max_runmean1)
+  return(max_runmean)
+}
+
+# arrange the data with the new columns - max and last
+covid_smooth <- join_covid_eco %>% group_by(Country) %>% mutate(max = max_num(New_cases),last = last_num(New_cases))
+
+#delete irrelevant columns and adding the ratio column
+covid_smooth  <- covid_smooth[, which(names(covid_smooth ) %in% c("Country","New_cases", "Date","max","last"))]
+
+covid_smooth$Ratio <- covid_smooth$last/covid_smooth$max  
+
+# Function for sorting the countries
+group_fun <- function(Ratio){
+  if (is.nan(Ratio)){
+    return("NA")
+  }
+  if (Ratio >0.99) {
+    return("exponentially increasing")
+  }
+  if (Ratio<0.01){
+    return("recovered")
+  }
+  if (Ratio>0.25 && Ratio<0.75){
+    return("struggling")
+  }
+}
+
+covid_smooth$group <- lapply(covid_smooth$Ratio,group_fun) # sorting to groups
+covid_smooth$Daily_Ratio <- covid_smooth$New_cases/covid_smooth$max
+
+# plot for each group:
+#recovered
+recovered <- covid_smooth[which(covid_smooth$group == "recovered"),]
+ggplot(recovered , aes(x = Date, y = Daily_Ratio, colour = Country)) + 
+  geom_smooth(se = FALSE) +  theme_bw() + ylab("Ratio") + ggtitle("Recovered")
+
+# exponentially increasing
+exp_inc <- covid_smooth[which(covid_smooth$group == "exponentially increasing"),]
+ggplot(exp_inc , aes(x = Date, y = Daily_Ratio, colour = Country)) + 
+  geom_smooth(se = FALSE) +  theme_bw() + ylab("Ratio") + ggtitle("exponentially increasing")
+
+# struggling
+struggling <- covid_smooth[which(covid_smooth$group == "struggling"),]
+ggplot(struggling , aes(x = Date, y = Daily_Ratio, colour = Country)) + 
+  geom_smooth(se = FALSE) +  theme_bw() + ylab("Ratio") + ggtitle("struggling")
+
+
+```
+
+In the graph of the **recovered** countries, it can be seen that the curves are characterized by a very strong decrease in the ratio between the average of cases and the number of new cases on the same day. We can see a number of countries like Anguilla that their ratio started to increase slowly again probably beacause of a second wave.
+
+In the graph of the countries still **struggling** in Corona, no consistency can be seen in the shape of the curves. In some countries ,such as Sweden, the ratio went up and then went down. And in other countries, such as Egypt and Nicaragua, the ratio went down and then went up so that these countries seem to be facing a second wave.
+
+In the graph of the **exponentially increasing** countries can be seen ,as we would expect, a very sharp rise in recent dates. 
+In some countries there seems to have been an increase,and then there was a balance in previous months so probably the new increase is due to a second wave. It can be seen in very few countries, such as Montenegro, that the ratio has not been high for a very long time and sometimes even zero, and then in the last month the rate has skyrocketed, so for them it is a kind of first wave.
+
+In addition, in the graph of the countriesthat **struggling** with the plague, all types of curves can be seen, so a similarity can be found between the curves in this group and the curves in the other groups.
+Also, a small similarity can be seen in the trend of the curves of **recovered** and **exponentially increasing** countries, but not in a uniform or consistent manner.
+
+## Q3. Linear Congruential Generator (35 pt)
+
+A Linear Congruential Generator (LCG) is an algorithm that yields a sequence of pseudo-randomized numbers calculated with a modular linear equation. The method represents one of the oldest and best-known pseudo-random number generator algorithms. The theory behind them is relatively easy to understand, and they are easy to implement and fast, especially on computer hardware which can provide modular arithmetic by storage-bit truncation. 
+
+[(source: Wikipedia)](https://en.wikipedia.org/wiki/Linear_congruential_generator)
+
+The generator is defined by the recurrence relation:
+
+  $X_{n + 1} = (a X_n + c) \: mod \: (m)$ 
+
+where $X_1,X_2,...$ is the sequence of pseudo-random values in the range $[0, m)$. All values $a,c,m,X_i$ are nonnegative integers and: <br>
+
+  $m$ is the "modulus", $m > 0$. <br>
+
+  $a$ is the "multiplier", $0 < a < m$.   <br>
+
+  $c$ is the "increment", $0 \leq c < m$.   <br>
+
+  $X_0$ is the "seed" or "start value", $0 \leq X_0 < m$.   <br>
+
+To produce pseudo-random numbers in the range $[0,1]$ we can simply divide and output the numbers $\frac{X_i}{m-1}$.
+
+The following visual example shows generating sequences of random numbers using the LCG for different parameters and seeds. 
+
+![](https://upload.wikimedia.org/wikipedia/commons/thumb/0/02/Linear_congruential_generator_visualisation.svg/2560px-Linear_congruential_generator_visualisation.svg.png)
+
+### a. (6pt)
+
+Write your own `LCG` function that implements an `LCG`-based pseudo-random number generator. <br>
+
+The function should accept the parameters $m$, $a$, $c$, the current state $X_0$ of the `LCG` and the number of random numbers $n$ to generate. <br>
+
+The function should advance the state $n$ times and return a vector of $n$ pseudo-random numbers in the range $[0,1]$ based on the states, and also return the final state of the `LCG` $X_n$ (i.e. the new seed).
+
+```{r 3a}
+# create LCG function
+
+LCG_fun <- function(m,a,c,x_0,n){
+  ans_vec <- c()
+  x_0 <- x_0
+  counter <- 1
+  while (counter <= n) {
+    x <- (a*x_0 + c)%%(m)
+    ans_vec <- c(ans_vec,x/(m-1))
+    x_0 <- x
+    counter <- counter + 1
+  }
+  x_n <- x_0
+  results <- list(ans_vec,x_n)
+  return(results)
+}
+```
+
+The function returns a list of the vector and the last x_n so I'll split them.
+
+**for example:**
+
+LCG_ans <- LCG_fun(9,2,0,1,4) = [(0.250 , 0.500, 1.000, 0.875) ,7.000]
+
+LCG_vec <- LCG_ans[1] = (0.250 , 0.500 , 1.000 , 0.875)
+
+LCG_Xn <- LCG_ans[2] = 7.000
+
+### b. (5pt) A particular case of the LCG has been implemented by IBM and had been very popular
+
+since the 1960's. In this `IBM.LCG` the `modulus` is $m=2^{31}$, the `multiplier` 
+
+is $a=2^{16}+3$, and the `increment` is $c=0$. <br>
+
+Set the seed to your ID number ('teudat zehut'), generate $2000$ consecutive pseudo-random numbers from the `IBM.LCG` and 
+
+divide them to $1000$ `consecutive pairs` denoted $(x_i,y_i), i=1,...,1000$.  <br>
+
+Create a scatter plot of the pairs. Does the spread of the points in the $[0,1]^2$ square seem to match i.i.d. uniform samples from this square? 
+```{r 3b}
+IBM.LCG <-as_vector(LCG_fun(2^31,(2^16)+3,0,315453027,2000)[1])
+
+# split to pairs:
+pairs_ibm <- matrix(IBM.LCG, ncol = 2, byrow = TRUE)
+pairs_ibm <- as.data.frame(pairs_ibm)
+
+# Scatter plot of the pairs
+y.lim <- c(0,1)
+x.lim <- c(0,1)
+base_plot <- ggplot(pairs_ibm, aes(x=pairs_ibm[,1], y=pairs_ibm[,2])) +  geom_point() + 
+                    geom_rect(xmin=x.lim[1], xmax=x.lim[2], 
+                    ymin=y.lim[1], ymax=y.lim[2],
+                    alpha=0.1, fill=NA, colour="red", size=0.5) 
+base_plot
+
+```
+
+It can be seen in the graph that the points are evenly distributed and therefore it can be concluded that this is a uniform distribution in [0,1].
+
+### c. (6pt) Divide the unit square into $B=10^2$ square bins of equal size. For each bin compute the expected number $e_{ij}$ of points
+
+in a sample of $n$ points, vs. the observed number $o_{ij}$ in your simulated data from (b.). Compute the goodness-of-fit test statistic for the data:
+
+$$
+
+S = \sum_{i,j=1}^{10} \frac{(o_{ij}-e_{ij})^2}{e_{ij}} . 
+
+$$
+
+For the null hypothesis $H_0: (x_i, y_i) \sim [0,1]^2 \: i.i.d.$ we know that (approximately) $S \sim \chi^2(B-1)$. Compute a p-value for this hypothesis testing problem and the statistic $S$ you have computed. Would you reject the null hypothesis or uniform distribution?
+
+```{r 3c}
+B.row <- 10 # sqrt of number of bins 
+B <- B.row^2
+
+for(i in c(1:(B.row-1))){
+  base_plot <- base_plot + geom_hline(yintercept= y.lim[1] + i * (y.lim[2]-y.lim[1])/B.row, linetype="dashed", color = "blue" )
+  base_plot <- base_plot + geom_vline(xintercept= x.lim[1] + i * (x.lim[2]-x.lim[1])/B.row, linetype="dashed", color = "blue" )
+}
+base_plot
+
+
+# a function that calculate the chi squre stitstic
+chi.square.stat <- function(xy, B.row)
+{
+  expected <- dim(xy)[1] / (B.row^2)  # all bins have equal expectation
+  observed <- matrix(0, B.row, B.row)
+  for(i in c(1:B.row))
+    for(j in c(1:B.row))
+      observed[i,j] <- sum(as.double( ((i-1)/B.row <= xy[,1]) & (xy[,1] < i/B.row) & ((j-1)/B.row <= xy[,2]) &  (xy[,2] < j/B.row) ))
+  return( sum(rowSums((observed - expected)^2 / expected))) # Compute statistic  
+}
+
+chi_stat <- chi.square.stat(pairs_ibm,B.row)
+chi_value <- qchisq(p=0.95,df=99)
+H_ans <- chi_stat>chi_value 
+H_ans
+
+p_val <- 1 - pchisq(chi_stat,df=99)
+p_ans <- p_val < 0.05
+p_ans
+```
+
+It can be seen that we do not reject H_0 both by the P-value and by the chi squared test, so it can be concluded that our sample has a uniform distribution According to what is assumed in the H_0.
+
+
+### d. (6pt) Draw $n_{iters}=10000$ times a sample of $n=1000$ i.i.d. points from the uniform distribution over the  $[0,1]^2$  square (using `runif`) and compute the statistic $S$ from above for each sample, generating random statistics $S_1,..,S_{n_{iters}}$. <br>
+
+Plot the empirical density distribution of the $S_i$ test statistics and compare it to the theoretical density of the $\chi^2(B-1)$ distribution. Are the distributions similar? <br>
+
+Compute the empirical p-value of the test statistic $S$ from (c.), defined as $1-\hat{F}_{n_{iters}}(S)$ 
+
+where $\hat{F}_{n_{iters}}$ is the empirical CDF of $S_1,..,S_{n_{iters}}$. Does it match the theoretical p-value from (c.)?
+
+```{r 3d}
+rand.unif.stats <- c()
+for(i in c(1:10000)) {
+  x_samp <- runif(1000,0,1)
+  y_samp <- runif(1000,0,1)
+  mat_samp <- cbind(x_samp,y_samp)
+  rand.unif.stats[i] <- chi.square.stat(mat_samp,10)
+}
+
+theo_chi <- rchisq(10000,df=99)
+
+# plot the comparing between Empirical Density of our Statistics Vs. Theoretical Density of Chi Square
+rand.unif.stats1<-as.data.frame(rand.unif.stats)
+
+ggplot(rand.unif.stats1, aes(x=rand.unif.stats) ) + geom_density( aes(x = rand.unif.stats, y = ..density..), fill="#69b3a2",color = "#69b3a2" ) + geom_label( aes(x=4.5, y=0.25,label="" ), color="#69b3a2") + xlim(0,170)+ylim(0,0.03)+
+geom_density( aes(x = theo_chi, y = ..density..)) +
+geom_label( aes(x=4.5, y=-0.25), color="#404080", label="") +
+theme_minimal() +
+xlab("value")+ggtitle("Empirical Density of our Statistics Vs. Theoretical Density of Chi Square")
+
+#calculate empirical p-value
+emp_pval <- 1- sum(ifelse(rand.unif.stats<chi_stat,1,0))/10000
+pvalues <- round(c(emp_pval,p_val),4)
+pvalues
+
+```
+
+It can be seen from the comparison between the distributions that the empirical statistics we obtained are very similar to the theoretical Density of 
+chi squared for n = 10000. In addition, the P values we received are almost identical.
+
+### e. (6pt) Repeat (b.) but this time use the LCG to generate `consecutive triplets` denoted $(x_i,y_i,z_i), i=1,...,1000$. <br>
+
+Create a 3-dimensional scatter plot of the simulated data using the package `plotly` and the command `plot_ly`.  <br>
+
+Does the spread of the points in the $[0,1]^3$ cube seem to match i.i.d. uniform samples from this cube? <br>
+
+**hint:** you can rotate the 3-dim. plot in different directions. Look at the plot from the `z-axis` looking down on the `x-axis` and `y-axis`. What is your conclusion?    <br>
+
+**Note:** the 3-dim. plot generated by `plotly` may not be observable when viewing the knitted `html` file from within $R$. Use a web-browser like `chrome`, `firefox` etc. to view the `html` file and plot
+
+```{r 3e}
+LCG_3000<- as_vector(LCG_fun(2^31,(2^16)+3,0,315453027,3000)[1])
+X <- LCG_3000[seq(1,3000,3)]
+Y <- LCG_3000[seq(2,3000,3)]
+Z <- LCG_3000[seq(3,3000,3)]
+
+LCG_3000_3D<-as.data.frame(cbind(X=X,Y=Y,Z=Z))
+plot_ly(data=LCG_3000_3D,x=~X,y=~Y,z=~Z,color=~Z,colors = c("green","red"),type = "scatter3d")
+```
+
+### f. (6pt) Why do you think this random number generator fell out of favor? correct it by changing the $a$ and $c$ parameters, and show that your correction indeed solves the problems encountered in the `IBM.LCG`.
+
+```{r 3f}
+LCG_3000_new<- as_vector(LCG_fun(2^31,(2^16)+5,1000000,315453027,3000)[1])
+X_new <- LCG_3000_new[seq(1,3000,3)]
+Y_new <- LCG_3000_new[seq(2,3000,3)]
+Z_new <- LCG_3000_new[seq(3,3000,3)]
+
+LCG_3000_3D_new<-as.data.frame(cbind(X=X_new,Y=Y_new,Z=Z_new))
+plot_ly(data=LCG_3000_3D_new,x=~X,y=~Y,z=~Z,color=~Z,colors = c("green","red"),type = "scatter3d")
+```
+
+If we look at the first graph where X and Y are the plane and Z is the vertical axis, we can see straight lines of points that are almost parallel to the Z axis.
+
+In the second graph, when we have greatly increased **c**, and replaced **a** with a digit that is not divisible by 3 it can be seen that the scatter is much more random and certain patterns of points or groups of points cannot be found and therefore the distribution is uniform.
+
+
